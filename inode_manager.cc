@@ -31,24 +31,17 @@ disk::write_block(blockid_t id, const char *buf)
 blockid_t
 block_manager::alloc_block()
 {
-  /*
-   * your lab1 code goes here.
-   * note: you should mark the corresponding bit in block bitmap when alloc.
-   * you need to think about which block you can start to be allocated.
-   */
+    using_blocks[bnum] = 1;
 
-  return 0;
+    return bnum++;
 }
 
 void
 block_manager::free_block(uint32_t id)
 {
-  /*
-   * your lab1 code goes here.
-   * note: you should unmark the corresponding bit in the block bitmap when free.
-   */
+    using_blocks[--bnum] = 0;
 
-  return;
+    return;
 }
 
 // The layout of disk should be like this:
@@ -62,6 +55,7 @@ block_manager::block_manager()
   sb.nblocks = BLOCK_NUM;
   sb.ninodes = INODE_NUM;
 
+  bnum = BLOCK_START_POS;
 }
 
 void
@@ -78,6 +72,14 @@ block_manager::write_block(uint32_t id, const char *buf)
 
 // inode layer -----------------------------------------
 
+#define WRITE_TO_BLOCK(ino, buf)                \
+    {                                           \
+        uint32_t id = bm->alloc_block();        \
+        bm->write_block(id, buf);               \
+        ino->blocks[ino->size] = id;            \
+        ino->size++;                            \
+    }
+
 inode_manager::inode_manager()
 {
   bm = new block_manager();
@@ -93,7 +95,7 @@ inode_manager::inode_manager()
 uint32_t
 inode_manager::alloc_inode(uint32_t type)
 {
-    static int inum = 1;
+    static uint32_t inum = 1;
     inode_t* ino = (inode_t*)malloc(sizeof(inode_t));
     ino->type = type;
     ino->size = 0;
@@ -169,27 +171,47 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
 void
 inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 {
-  /*
-   * your lab1 code goes here.
-   * note: read blocks related to inode number inum,
-   * and copy them to buf_Out
-   */
+    inode_t* ino = get_inode(inum);
+    inode_t* ido = NULL;
+    uint32_t bsize = BLOCK_SIZE * ino->size;
+    if (ino->size >= NDIRECT) {
+        ido = get_inode(ino->blocks[NDIRECT]);
+        bsize += BLOCK_SIZE * ido->size;
+    }
+    *buf_out = (char*)malloc(bsize);
+    uint32_t _size = std::min(ino->size, (unsigned int)NDIRECT);
+    for (uint32_t i = 0; i < _size; i++)
+        bm->read_block(ino->blocks[i], *buf_out + i * BLOCK_SIZE);
+    if (ido != NULL)
+        for (uint32_t i = 0; i < ido->size; i++)
+            bm->read_block(ido->blocks[i], *buf_out + (i + NDIRECT) * BLOCK_SIZE);
+    //*size = strlen(*buf_out);
+    *size = strlen(*buf_out);
 
-  return;
+    return;
 }
 
 /* alloc/free blocks if needed */
 void
 inode_manager::write_file(uint32_t inum, const char *buf, int size)
 {
-  /*
-   * your lab1 code goes here.
-   * note: write buf to blocks of inode inum.
-   * you need to consider the situation when the size of buf
-   * is larger or smaller than the size of original inode
-   */
+    inode_t* ino = get_inode(inum);
+    uint32_t _size = std::min(size, NDIRECT * BLOCK_SIZE);
+    for (uint32_t i = 0; i < _size; i += BLOCK_SIZE) {
+        WRITE_TO_BLOCK(ino, buf + i);
+    }
+    if (ino->size >= NDIRECT) {
+        uint32_t new_inum = alloc_inode(ino->type);
+        ino->blocks[NDIRECT] = new_inum;
+        inode_t* ido = get_inode(new_inum);
+        for (uint32_t i = 0; i < size - _size; i += BLOCK_SIZE) {
+            WRITE_TO_BLOCK(ido, buf + i + _size);
+        }
+        put_inode(new_inum, ido);
+    }
+    put_inode(inum, ino);
 
-  return;
+    return;
 }
 
 void
