@@ -26,6 +26,8 @@ class disk {
 
 // block layer -----------------------------------------
 
+#define BLOCK_START_POS (BLOCK_NUM / BPB + INODE_NUM / IPB + 3)
+
 typedef struct superblock {
   uint32_t size;
   uint32_t nblocks;
@@ -36,6 +38,7 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  uint32_t bnum;
  public:
   block_manager();
   struct superblock sb;
@@ -92,4 +95,3 @@ class inode_manager {
 };
 
 #endif
-
