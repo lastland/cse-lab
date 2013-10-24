@@ -39,7 +39,7 @@ block_manager::alloc_block()
 void
 block_manager::free_block(uint32_t id)
 {
-    using_blocks[--bnum] = 0;
+    using_blocks[id] = 0;
 
     return;
 }
@@ -113,6 +113,9 @@ inode_manager::free_inode(uint32_t inum)
      * note: you need to check if the inode is already a freed one;
      * if not, clear it, and remember to write back to disk.
      */
+    inode_t* ino = get_inode(inum);
+    memset(ino, 0, sizeof(inode_t));
+    put_inode(inum, ino);
 
     return;
 }
@@ -218,11 +221,15 @@ void
 inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
 {
     inode_t* ino = get_inode(inum);
-    a.type = ino->type;
-    a.atime = ino->atime;
-    a.mtime = ino->mtime;
-    a.ctime = ino->ctime;
-    a.size = ino->size;
+    if (ino != NULL) {
+        a.type = ino->type;
+        a.atime = ino->atime;
+        a.mtime = ino->mtime;
+        a.ctime = ino->ctime;
+        a.size = ino->size;
+    } else {
+        memset(&a, 0, sizeof(a));
+    }
 
     return;
 }
@@ -230,10 +237,22 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
 void
 inode_manager::remove_file(uint32_t inum)
 {
-  /*
-   * your lab1 code goes here
-   * note: you need to consider about both the data block and inode of the file
-   */
+    /*
+     * your lab1 code goes here
+     * note: you need to consider about both the data block and inode of the file
+     */
+    inode_t* ino = get_inode(inum);
+    uint32_t _size = std::min(ino->size, (unsigned int)NDIRECT);
+    for (uint32_t i = 0; i < _size; i++)
+        bm->free_block(ino->blocks[i]);
+    int idnum = ino->blocks[NDIRECT];
+    if (idnum != 0) {
+        inode_t* ido = get_inode(idnum);
+        for (uint32_t i = 0; i < ido->size; i++)
+            bm->free_block(ido->blocks[i]);
+        free_inode(idnum);
+    }
+    free_inode(inum);
 
-  return;
+    return;
 }
