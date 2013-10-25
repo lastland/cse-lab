@@ -175,20 +175,21 @@ void
 inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 {
     inode_t* ino = get_inode(inum);
-    inode_t* ido = NULL;
-    uint32_t bsize = BLOCK_SIZE * ino->size;
+    *buf_out = (char*)malloc(ino->size * BLOCK_SIZE);
+    memset(*buf_out, 0, ino->size * BLOCK_SIZE);
+    uint32_t _size = MIN(ino->size, NDIRECT) * BLOCK_SIZE;
+    for (uint32_t i = 0; i < _size; i += BLOCK_SIZE)
+        bm->read_block(ino->blocks[i / BLOCK_SIZE], *buf_out + i);
     if (ino->size >= NDIRECT) {
-        ido = get_inode(ino->blocks[NDIRECT]);
-        bsize += BLOCK_SIZE * ido->size;
+        int* indirect_block = (int*)malloc(BLOCK_SIZE);
+        bm->read_block(ino->blocks[NDIRECT], (char*)indirect_block);
+        uint32_t size = ino->size * BLOCK_SIZE;
+        for (uint32_t i = _size, j = 0; i < size; i += BLOCK_SIZE, j++) {
+            bm->read_block(indirect_block[j], *buf_out + i);
+        }
+        (*buf_out)[size] = 0;
+        free(indirect_block);
     }
-    *buf_out = (char*)malloc(bsize);
-    uint32_t _size = std::min(ino->size, (unsigned int)NDIRECT);
-    for (uint32_t i = 0; i < _size; i++)
-        bm->read_block(ino->blocks[i], *buf_out + i * BLOCK_SIZE);
-    if (ido != NULL)
-        for (uint32_t i = 0; i < ido->size; i++)
-            bm->read_block(ido->blocks[i], *buf_out + (i + NDIRECT) * BLOCK_SIZE);
-    //*size = strlen(*buf_out);
     *size = strlen(*buf_out);
 
     return;
@@ -199,18 +200,21 @@ void
 inode_manager::write_file(uint32_t inum, const char *buf, int size)
 {
     inode_t* ino = get_inode(inum);
-    uint32_t _size = std::min(size, NDIRECT * BLOCK_SIZE);
+    uint32_t _size = MIN(size, NDIRECT * BLOCK_SIZE);
     for (uint32_t i = 0; i < _size; i += BLOCK_SIZE) {
         WRITE_TO_BLOCK(ino, buf + i);
     }
-    if (ino->size >= NDIRECT) {
-        uint32_t new_inum = alloc_inode(ino->type);
-        ino->blocks[NDIRECT] = new_inum;
-        inode_t* ido = get_inode(new_inum);
-        for (uint32_t i = 0; i < size - _size; i += BLOCK_SIZE) {
-            WRITE_TO_BLOCK(ido, buf + i + _size);
+    if ((int)_size < size) {
+        int* indirect_block = (int*)malloc(BLOCK_SIZE);
+        for (int i = _size, j = 0; i < size; i += BLOCK_SIZE, j += 1) {
+            indirect_block[j] = bm->alloc_block();
+            bm->write_block(indirect_block[j], buf + i);
+            ino->size++;
         }
-        put_inode(new_inum, ido);
+        uint32_t id = bm->alloc_block();
+        bm->write_block(id, (char*)indirect_block);
+        ino->blocks[NDIRECT] = id;
+        free(indirect_block);
     }
     put_inode(inum, ino);
 
@@ -242,7 +246,7 @@ inode_manager::remove_file(uint32_t inum)
      * note: you need to consider about both the data block and inode of the file
      */
     inode_t* ino = get_inode(inum);
-    uint32_t _size = std::min(ino->size, (unsigned int)NDIRECT);
+    uint32_t _size = MIN(ino->size, NDIRECT);
     for (uint32_t i = 0; i < _size; i++)
         bm->free_block(ino->blocks[i]);
     int idnum = ino->blocks[NDIRECT];
