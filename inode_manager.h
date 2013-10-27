@@ -38,7 +38,6 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
-  uint32_t bnum;
  public:
   block_manager();
   struct superblock sb;
@@ -64,6 +63,8 @@ class block_manager {
 
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
+
+#define BPI (BLOCK_NUM / sizeof(int) / 8)
 
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))

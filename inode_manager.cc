@@ -27,19 +27,44 @@ disk::write_block(blockid_t id, const char *buf)
 
 // block layer -----------------------------------------
 
+static inline int fast_log2(int x) {
+    float fx;
+    unsigned long ix, exp;
+
+    fx = (float)x;
+    ix = *(unsigned long*)&fx;
+    exp = (ix >> 23) & 0xFF;
+
+    return exp - 127;
+}
+
 // Allocate a free disk block.
 blockid_t
 block_manager::alloc_block()
 {
-    using_blocks[bnum] = 1;
+    int res = 0;
+    for (uint32_t i = 0; i < BPI; i++) {
+        int mask = ~using_blocks[i];
+        if (mask != 0) {
+            int pos = mask & -mask;
+            using_blocks[i] |= pos;
+            pos = fast_log2(pos);
+            res = i * sizeof(int) * 8 + pos;
+            break;
+        }
+    }
 
-    return bnum++;
+    return res + BLOCK_START_POS;
 }
 
 void
 block_manager::free_block(uint32_t id)
 {
-    using_blocks[id] = 0;
+    id -= BLOCK_START_POS;
+    int key = id / sizeof(int) / 8;
+    int pos = id % (sizeof(int) * 8);
+    int mask = 1 << (pos - 1);
+    using_blocks[key] &= ~mask;
 
     return;
 }
@@ -48,14 +73,12 @@ block_manager::free_block(uint32_t id)
 // |<-sb->|<-free block bitmap->|<-inode table->|<-data->|
 block_manager::block_manager()
 {
-  d = new disk();
+    d = new disk();
 
-  // format the disk
-  sb.size = BLOCK_SIZE * BLOCK_NUM;
-  sb.nblocks = BLOCK_NUM;
-  sb.ninodes = INODE_NUM;
-
-  bnum = BLOCK_START_POS;
+    // format the disk
+    sb.size = BLOCK_SIZE * BLOCK_NUM;
+    sb.nblocks = BLOCK_NUM;
+    sb.ninodes = INODE_NUM;
 }
 
 void
