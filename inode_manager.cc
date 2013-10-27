@@ -72,14 +72,6 @@ block_manager::write_block(uint32_t id, const char *buf)
 
 // inode layer -----------------------------------------
 
-#define WRITE_TO_BLOCK(ino, buf)                \
-    {                                           \
-        uint32_t id = bm->alloc_block();        \
-        bm->write_block(id, buf);               \
-        ino->blocks[ino->size] = id;            \
-        ino->size++;                            \
-    }
-
 inode_manager::inode_manager()
 {
   bm = new block_manager();
@@ -202,7 +194,10 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     inode_t* ino = get_inode(inum);
     uint32_t _size = MIN(size, NDIRECT * BLOCK_SIZE);
     for (uint32_t i = 0; i < _size; i += BLOCK_SIZE) {
-        WRITE_TO_BLOCK(ino, buf + i);
+        uint32_t id = bm->alloc_block();
+        bm->write_block(id, buf + i);
+        ino->blocks[ino->size] = id;
+        ino->size++;
     }
     if ((int)_size < size) {
         int* indirect_block = (int*)malloc(BLOCK_SIZE);
