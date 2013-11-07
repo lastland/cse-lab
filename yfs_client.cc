@@ -122,11 +122,6 @@ yfs_client::setattr(inum ino, size_t size)
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: get the content of inode ino, and modify its content
-     * according to the size (<, =, or >) content length.
-     */
     std::string buf;
     ec->get(ino, buf);\
     std::cout<<"setattr given size = "<<size<<std::endl;
@@ -149,11 +144,6 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: lookup is what you need to check if file exist;
-     * after create file or dir, you must remember to modify the parent infomation.
-     */
 #ifdef DEBUG
     std::cout<<"yfs"<<__FUNCTION__<<std::endl;
 #endif
@@ -193,11 +183,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: lookup file from parent dir according to name;
-     * you should design the format of directory content.
-     */
 #ifdef DEBUG
     std::cout<<"lookup for "<<name<<std::endl;
 #endif
@@ -237,11 +222,6 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: you should parse the dirctory content using your defined format,
-     * and push the dirents to the list.
-     */
 #ifdef DEBUG
     std::cout<<"readdir\n";
 #endif
@@ -276,10 +256,6 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: read using ec->get().
-     */
     std::string buf;
     ec->get(ino, buf);
     data = buf.substr(off, size);
@@ -296,11 +272,6 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: write using ec->put().
-     * when off > length of original file, fill the holes with '\0'.
-     */
 #ifdef DEBUG
     std::cout<<"yfs write off="<<off<<", size="<<size<<std::endl;
 #endif
@@ -334,11 +305,6 @@ int yfs_client::unlink(inum parent,const char *name)
 {
     int r = OK;
 
-    /*
-     * your lab2 code goes here.
-     * note: you should remove the file using ec->remove,
-     * and update the parent directory content.
-     */
     std::string buf;
     size_t s;
     std::string na;
