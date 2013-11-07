@@ -1,3 +1,4 @@
+#include <time.h>
 #include "inode_manager.h"
 
 #define DEBUG
@@ -123,7 +124,7 @@ inode_manager::alloc_inode(uint32_t type)
     memset(ino, 0, sizeof(inode_t));
     ino->type = type;
     ino->size = 0;
-    // TODO: time
+    ino->atime = ino->mtime = ino->ctime = time(NULL);
     put_inode(inum, ino);
 
     return inum++;
@@ -188,6 +189,7 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
   ino_disk = (struct inode*)buf + inum%IPB;
   *ino_disk = *ino;
+  ino_disk->mtime = ino_disk->ctime = time(NULL);
   bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
 }
 

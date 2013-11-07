@@ -257,7 +257,8 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
 
     yfs_client::inum p = parent;
     yfs_client::inum ino = e->ino;
-    yfs_client::status r = yfs->create(p, name, mode, ino);
+    yfs_client::status r = yfs->create(p, name, mode, ino,
+                                       extent_protocol::T_FILE);
     if (r == yfs_client::OK) e->ino = ino;
     getattr(ino, e->attr);
 
@@ -448,15 +449,20 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     e.attr_timeout = 0.0;
     e.entry_timeout = 0.0;
     e.generation = 0;
-    // Suppress compiler warning of unused e.
-    (void) e;
 
     /*
      * your lab2 code goes here.
      * note: you can use fuseserver_createhelper;
      * remember to return e using fuse_reply_entry.
      */
-#if 0
+    yfs_client::inum p = parent;
+    yfs_client::inum ino = e.ino;
+    yfs_client::status r = yfs->create(p, name, mode, ino,
+                                       extent_protocol::T_DIR);
+    if (r == yfs_client::EXIST) fuse_reply_err(req, EEXIST);
+    if (r == yfs_client::OK) e.ino = ino;
+    getattr(ino, e.attr);
+#if 1
     // Change the above line to "#if 1", and your code goes here
     fuse_reply_entry(req, &e);
 #else
@@ -481,7 +487,10 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
      * success:	fuse_reply_err(req, 0);
      * not found: fuse_reply_err(req, ENOENT);
      */
-    fuse_reply_err(req, ENOSYS);
+    if (yfs->unlink(parent, name) == yfs_client::OK)
+        fuse_reply_err(req, 0);
+    else
+        fuse_reply_err(req, ENOENT);
 
 }
 

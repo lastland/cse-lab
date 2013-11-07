@@ -144,7 +144,8 @@ yfs_client::setattr(inum ino, size_t size)
 }
 
 int
-yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
+yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
+                   extent_protocol::types type)
 {
     int r = OK;
 
@@ -162,7 +163,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     if (found) r = EXIST;
     else
     {
-        if ((r = ec->create(extent_protocol::T_FILE, ino_out)) != OK)
+        if ((r = ec->create(type, ino_out)) != OK)
             return r;
         std::string buf;
         if ((r = ec->get(parent, buf)) != OK)
@@ -203,7 +204,10 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
     std::string buf;
     if ((r = ec->get(parent, buf)) != OK)
         return r;
-    std::size_t pos = buf.find(name);
+    std::string na;
+    na.assign(name);
+    na += "/";
+    std::size_t pos = buf.find(na);
 #ifdef DEBUG
     std::cout<<"look up in "<<parent<<" "<<buf<<std::endl;
 #endif
@@ -211,15 +215,15 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
         found = false;
     else
     {
-        found = true;
-        size_t s = buf.find('/', pos);
-        size_t t = buf.find('/', s + 1);
+    found = true;
+    size_t s = buf.find('/', pos);
+    size_t t = buf.find('/', s + 1);
 #ifdef DEBUG
-        std::cout<<"s = "<<s<<", t = "<<t
-                 <<", substr = "<<buf.substr(s, t - s)<<std::endl;
+    std::cout<<"s = "<<s<<", t = "<<t
+             <<", substr = "<<buf.substr(s, t - s)<<std::endl;
 #endif
-        ino_out = strtol(buf.substr(s + 1, t - s).c_str(), NULL, 10);
-    }
+    ino_out = strtol(buf.substr(s + 1, t - s).c_str(), NULL, 10);
+}
 
 #ifdef DEBUG
     std::cout<<"lookup: "<<r<<std::endl;
@@ -335,6 +339,29 @@ int yfs_client::unlink(inum parent,const char *name)
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
+    std::string buf;
+    size_t s;
+    std::string na;
+    na.assign(name);
+    na += "/";
+    ec->get(parent, buf);
+#ifdef DEBUG
+    std::cout<<"find "<<na<<" in "<<buf<<std::endl;
+#endif
+    if ((s = buf.find(na)) == std::string::npos)
+        return NOENT;
+#ifdef DEBUG
+    std::cout<<"find at "<<s<<std::endl;
+#endif
+    size_t t = buf.find('/', s) + 1;
+    size_t k = buf.find('/', t);
+    inum ino = strtol(buf.substr(t, k - t).c_str(), NULL, 10);
+    r = ec->remove(ino);
+    buf = buf.substr(0, s) + buf.substr(k + 1);
+#ifdef DEBUG
+    std::cout<<"unlink parent = "<<parent<<", name = "<<name<<std::endl;
+#endif
+    ec->put(parent, buf);
 
     return r;
 }
