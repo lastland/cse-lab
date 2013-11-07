@@ -9,8 +9,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define DEBUG
-
 yfs_client::yfs_client()
 {
     ec = new extent_client();

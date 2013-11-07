@@ -1,8 +1,6 @@
 #include <time.h>
 #include "inode_manager.h"
 
-#define DEBUG
-
 // disk layer -----------------------------------------
 
 disk::disk()

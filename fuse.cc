@@ -18,8 +18,6 @@
 #include "lang/verify.h"
 #include "yfs_client.h"
 
-#define DEBUG
-
 int myid;
 yfs_client *yfs;
 
