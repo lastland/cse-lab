@@ -1,5 +1,7 @@
 #include "inode_manager.h"
 
+#define DEBUG
+
 // disk layer -----------------------------------------
 
 disk::disk()
@@ -190,8 +192,11 @@ void
 inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 {
     inode_t* ino = get_inode(inum);
-    *buf_out = (char*)malloc(ino->size * BLOCK_SIZE);
-    memset(*buf_out, 0, ino->size * BLOCK_SIZE);
+    *buf_out = (char*)malloc(ino->size * BLOCK_SIZE + 1);
+    memset(*buf_out, 0, ino->size * BLOCK_SIZE + 1);
+#ifdef DEBUG
+    std::cout<<ino->size<<std::endl;
+#endif
 
     // direct blocks
     uint32_t _size = MIN(ino->size, NDIRECT) * BLOCK_SIZE;
@@ -211,6 +216,9 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
     }
 
     *size = strlen(*buf_out);
+#ifdef DEBUG
+    std::cout<<"read gets "<<*size<<" "<<*buf_out<<std::endl;
+#endif
 
     return;
 }
@@ -221,22 +229,51 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 {
     inode_t* ino = get_inode(inum);
 
-    // direct blocks
+#ifdef DEBUG
+    std::cout<<"write file inum = "<<inum<<std::endl;
+    std::cout<<"write file size = "<<size<<std::endl;
+    std::cout<<"write content:"<<buf<<std::endl;
+#endif
+
+    uint32_t new_size = 0;
     uint32_t _size = MIN(size, NDIRECT * BLOCK_SIZE);
+
+    for (int i = 0; i < NDIRECT; i++)
+        if (ino->blocks[i] != 0)
+            bm->free_block(ino->blocks[i]);
+    if (ino->blocks[NDIRECT] != 0) {
+        int* indirect_block = (int*)malloc(BLOCK_SIZE);
+        bm->read_block(ino->blocks[NDIRECT], (char*)indirect_block);
+        uint32_t size = ino->size * BLOCK_SIZE;
+        for (uint32_t i = NDIRECT * BLOCK_SIZE, j = 0;
+             i < size; i += BLOCK_SIZE, j++)
+            bm->free_block(indirect_block[j]);
+        free(indirect_block);
+        bm->free_block(ino->blocks[NDIRECT]);
+    }
+
+    // direct blocks
     for (uint32_t i = 0; i < _size; i += BLOCK_SIZE) {
         uint32_t id = bm->alloc_block();
         bm->write_block(id, buf + i);
-        ino->blocks[ino->size] = id;
-        ino->size++;
+        ino->blocks[new_size] = id;
+        new_size++;
+#ifdef DEBUG
+        std::cout<<"write to block "<<ino->blocks[new_size - 1]
+                 <<" with "<<buf + i<<std::endl;
+#endif
     }
 
     // indirect blocks
     if ((int)_size < size) {
+#ifdef DEBUG
+        std::cout<<"indirect!"<<std::endl;
+#endif
         int* indirect_block = (int*)malloc(BLOCK_SIZE);
         for (int i = _size, j = 0; i < size; i += BLOCK_SIZE, j += 1) {
             indirect_block[j] = bm->alloc_block();
             bm->write_block(indirect_block[j], buf + i);
-            ino->size++;
+            new_size++;
         }
         uint32_t id = bm->alloc_block();
         bm->write_block(id, (char*)indirect_block);
@@ -245,6 +282,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     }
 
     // inode must be updated
+    ino->size = new_size;
     put_inode(inum, ino);
 
     return;
