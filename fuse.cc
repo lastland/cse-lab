@@ -121,12 +121,15 @@ fuseserver_getattr(fuse_req_t req, fuse_ino_t ino,
 //
 void
 fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
-        int to_set, struct fuse_file_info *fi)
+                   int to_set, struct fuse_file_info *fi)
 {
     printf("fuseserver_setattr 0x%x\n", to_set);
-    if (FUSE_SET_ATTR_SIZE & to_set) {
+    if (FUSE_SET_ATTR_SIZE & to_set)
+    {
         printf("   fuseserver_setattr set size to %zu\n", attr->st_size);
         struct stat st;
+        yfs->setattr(ino, attr->st_size);
+        getattr(ino, st);
 
         /*
          * your lab2 code goes here.
@@ -134,12 +137,12 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
          * create a struct stat, fill it in using getattr,
          * and reply back using fuse_reply_attr.
          */
-#if 0
+#if 1
         // Change the above line to "#if 1", and your code goes here
         // Note: fill st using getattr before fuse_reply_attr
         fuse_reply_attr(req, &st, 0);
 #else
-    fuse_reply_err(req, ENOSYS);
+        fuse_reply_err(req, ENOSYS);
 #endif
 
     } else {
@@ -168,15 +171,16 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
      * note: you should use yfs->read to read the buffer of size;
      * and reply using fuse_reply_buf.
      */
-#if 0
-    std::string buf;
-    // Change the above "#if 0" to "#if 1", and your code goes here
-    fuse_reply_buf(req, buf.data(), buf.size());
-#else
-    fuse_reply_err(req, ENOSYS);
+#ifdef DEBUG
+    std::cout<<"ino = "<<ino<<", off = "<<off<<", size = "<<size<<std::endl;
 #endif
-
-
+    std::string buf;
+    yfs->read(ino, size, off, buf);
+    // Change the above "#if 0" to "#if 1", and your code goes here
+#ifdef DEBUG
+    std::cout<<"fuse reads "<<buf.size()<<" "<<buf<<" "<<buf.data()<<std::endl;
+#endif
+    fuse_reply_buf(req, buf.data(), buf.size());
 }
 
 //
@@ -205,7 +209,15 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
      * from off to ino;
      * and reply the length of bytes_written using fuse_reply_write.
      */
-#if 0
+#ifdef DEBUG
+    std::cout<<"write given size = "<<size<<std::endl
+             <<"buf = "<<buf<<std::endl;
+#endif
+    yfs->write(ino, size, off, buf, size);
+#ifdef DEBUG
+    std::cout<<"write reply size = "<<size<<std::endl;
+#endif
+#if 1
     // Change the above line to "#if 1", and your code goes here
     fuse_reply_write(req, size);
 #else
@@ -400,7 +412,7 @@ fuseserver_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
          iter != lst.end(); iter++)
     {
         dirbuf_add(&b, iter->name.c_str(), iter->inum);
-        #ifdef DEBUG
+#ifdef DEBUG
         std::cout<<"dir: entry name = "<<iter->name
                  <<", inum = "<<iter->inum<<std::endl;
 #endif

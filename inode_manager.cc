@@ -47,11 +47,14 @@ block_manager::alloc_block()
     int res = 0;
     for (uint32_t i = 0; i < BPI; i++) {
         int mask = ~using_blocks[i];
+        std::cout<<"i = "<<i<<"mask = "<<using_blocks[i]<<std::endl;
         if (mask != 0) {
             int pos = mask & -mask; // get the rightmost 1
+            std::cout<<"pos = "<<pos<<std::endl;
             using_blocks[i] |= pos;
             pos = fast_log2(pos);
             res = i * sizeof(int) * 8 + pos; // which blocknum it is
+            std::cout<<"res = "<<res + BLOCK_START_POS<<std::endl;
             break;
         }
     }
@@ -62,10 +65,13 @@ block_manager::alloc_block()
 void
 block_manager::free_block(uint32_t id)
 {
+    std::cout<<"free id = "<<id<<std::endl;
     id -= BLOCK_START_POS;
     int key = id / sizeof(int) / 8; // key in using_blocks
     int pos = id % (sizeof(int) * 8);
-    int mask = 1 << (pos - 1);
+    int mask = 1 << pos;
+    std::cout<<"pos = "<<mask<<std::endl;
+
     using_blocks[key] &= ~mask;
 
     return;
@@ -114,6 +120,7 @@ inode_manager::alloc_inode(uint32_t type)
 {
     static uint32_t inum = 1;
     inode_t* ino = (inode_t*)malloc(sizeof(inode_t));
+    memset(ino, 0, sizeof(inode_t));
     ino->type = type;
     ino->size = 0;
     // TODO: time
@@ -192,22 +199,23 @@ void
 inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
 {
     inode_t* ino = get_inode(inum);
-    *buf_out = (char*)malloc(ino->size * BLOCK_SIZE + 1);
-    memset(*buf_out, 0, ino->size * BLOCK_SIZE + 1);
+    size_t m_size = (ino->size / BLOCK_SIZE + 1) * BLOCK_SIZE;
+    *buf_out = (char*)malloc(m_size);
+    memset(*buf_out, 0, m_size);
 #ifdef DEBUG
-    std::cout<<ino->size<<std::endl;
+    std::cout<<"read gets"<<m_size<<" "<<ino->size<<std::endl;
 #endif
 
     // direct blocks
-    uint32_t _size = MIN(ino->size, NDIRECT) * BLOCK_SIZE;
+    uint32_t _size = MIN(ino->size, NDIRECT * BLOCK_SIZE);
     for (uint32_t i = 0; i < _size; i += BLOCK_SIZE)
         bm->read_block(ino->blocks[i / BLOCK_SIZE], *buf_out + i);
 
     // indirect blocks
-    if (ino->size >= NDIRECT) {
+    if (ino->size / BLOCK_SIZE >= NDIRECT) {
         int* indirect_block = (int*)malloc(BLOCK_SIZE);
         bm->read_block(ino->blocks[NDIRECT], (char*)indirect_block);
-        uint32_t size = ino->size * BLOCK_SIZE;
+        uint32_t size = ino->size;
         for (uint32_t i = _size, j = 0; i < size; i += BLOCK_SIZE, j++) {
             bm->read_block(indirect_block[j], *buf_out + i);
         }
@@ -215,7 +223,7 @@ inode_manager::read_file(uint32_t inum, char **buf_out, int *size)
         free(indirect_block);
     }
 
-    *size = strlen(*buf_out);
+    *size = ino->size;
 #ifdef DEBUG
     std::cout<<"read gets "<<*size<<" "<<*buf_out<<std::endl;
 #endif
@@ -240,16 +248,20 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
 
     for (int i = 0; i < NDIRECT; i++)
         if (ino->blocks[i] != 0)
-            bm->free_block(ino->blocks[i]);
+            {
+                bm->free_block(ino->blocks[i]);
+                ino->blocks[i] = 0;
+            }
     if (ino->blocks[NDIRECT] != 0) {
         int* indirect_block = (int*)malloc(BLOCK_SIZE);
         bm->read_block(ino->blocks[NDIRECT], (char*)indirect_block);
-        uint32_t size = ino->size * BLOCK_SIZE;
+        uint32_t size = ino->size;
         for (uint32_t i = NDIRECT * BLOCK_SIZE, j = 0;
              i < size; i += BLOCK_SIZE, j++)
             bm->free_block(indirect_block[j]);
         free(indirect_block);
         bm->free_block(ino->blocks[NDIRECT]);
+        ino->blocks[NDIRECT] = 0;
     }
 
     // direct blocks
@@ -282,7 +294,7 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
     }
 
     // inode must be updated
-    ino->size = new_size;
+    ino->size = size;
     put_inode(inum, ino);
 
     return;
@@ -313,7 +325,7 @@ inode_manager::remove_file(uint32_t inum)
      * note: you need to consider about both the data block and inode of the file
      */
     inode_t* ino = get_inode(inum);
-    uint32_t _size = MIN(ino->size, NDIRECT);
+    uint32_t _size = MIN(ino->size / BLOCK_SIZE, NDIRECT);
     for (uint32_t i = 0; i < _size; i++)
         bm->free_block(ino->blocks[i]);
     int idnum = ino->blocks[NDIRECT];

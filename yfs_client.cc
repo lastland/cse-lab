@@ -127,6 +127,18 @@ yfs_client::setattr(inum ino, size_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
+    std::string buf;
+    ec->get(ino, buf);\
+    std::cout<<"setattr given size = "<<size<<std::endl;
+    std::cout<<"setattr get buf size = "<<buf.size()<<", buf = "<<buf<<std::endl;
+    size_t s = buf.size() - size;
+    if (s > 0)
+        buf = buf.substr(0, size);
+    else if (s < 0)
+        for (size_t i = 0; i < s; i++)
+            buf += '\0';
+    ec->put(ino, buf);
+    std::cout<<"setattr size = "<<buf.size()<<", buf = "<<buf<<std::endl;
 
     return r;
 }
@@ -141,6 +153,9 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
      * note: lookup is what you need to check if file exist;
      * after create file or dir, you must remember to modify the parent infomation.
      */
+#ifdef DEBUG
+    std::cout<<"yfs"<<__FUNCTION__<<std::endl;
+#endif
     bool found = false;
     if ((r = lookup(parent, name, found, ino_out)) != OK)
         return r;
@@ -194,7 +209,8 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 #endif
     if (pos == std::string::npos)
         found = false;
-    else {
+    else
+    {
         found = true;
         size_t s = buf.find('/', pos);
         size_t t = buf.find('/', s + 1);
@@ -245,7 +261,7 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
 #endif
         e.inum = strtol(buf.substr(s, t - s).c_str(), NULL, 10);
         s = t + 1;
-        list.push_front(e);
+        list.push_back(e);
     }
 
     return r;
@@ -260,6 +276,12 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your lab2 code goes here.
      * note: read using ec->get().
      */
+    std::string buf;
+    ec->get(ino, buf);
+    data = buf.substr(off, size);
+#ifdef DEBUG
+    std::cout<<"yfs reads size "<<buf.size()<<" "<<data<<std::endl;
+#endif
 
     return r;
 }
@@ -275,6 +297,31 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
+#ifdef DEBUG
+    std::cout<<"yfs write off="<<off<<", size="<<size<<std::endl;
+#endif
+    std::string buf;
+    std::string dat;
+    dat.assign(data, size);
+    ec->get(ino, buf);
+#ifdef DEBUG
+    std::cout<<"yfs buf size = "<<buf.size()<<", buf = "<<buf<<std::endl;
+    std::cout<<"dat = "<<dat<<std::endl;
+#endif
+    if (off > buf.size())
+    {
+        size_t t = off - buf.size();
+        for (size_t i = 0; i < t; i++)
+            buf += '\0';
+        buf += dat;
+    }
+    else
+        buf.replace(off, size, data, 0, size);
+#ifdef DEBUG
+    std::cout<<"yfs writes size "<<buf.size()<<" "<<buf<<std::endl;
+#endif
+    ec->put(ino, buf);
+    bytes_written = size;
 
     return r;
 }
