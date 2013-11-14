@@ -26,6 +26,8 @@ class disk {
 
 // block layer -----------------------------------------
 
+#define BLOCK_START_POS (BLOCK_NUM / BPB + INODE_NUM / IPB + 3)
+
 typedef struct superblock {
   uint32_t size;
   uint32_t nblocks;
@@ -62,6 +64,8 @@ class block_manager {
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
 
+#define BPI (BLOCK_NUM / sizeof(int) / 8)
+
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
@@ -92,4 +96,3 @@ class inode_manager {
 };
 
 #endif
-
