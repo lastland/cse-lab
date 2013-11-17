@@ -9,6 +9,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define LOCK(x) { lc->acquire(x); }
+#define UNLOCK(x) { lc->release(x); }
+
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
@@ -16,7 +19,6 @@ yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
   if (ec->put(1, "") != extent_protocol::OK)
       printf("error init root dir\n"); // XYB: init root dir
 }
-
 
 yfs_client::inum
 yfs_client::n2i(std::string n)
@@ -38,18 +40,21 @@ yfs_client::filename(inum inum)
 bool
 yfs_client::isfile(inum inum)
 {
+    LOCK(inum);
     extent_protocol::attr a;
-
     if (ec->getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
+        UNLOCK(inum);
         return false;
     }
 
     if (a.type == extent_protocol::T_FILE) {
         printf("isfile: %lld is a file\n", inum);
+        UNLOCK(inum);
         return true;
     }
     printf("isfile: %lld is a dir\n", inum);
+    UNLOCK(inum);
     return false;
 }
 
@@ -146,6 +151,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
     if (found) r = EXIST;
     else
     {
+        LOCK(parent);
         if ((r = ec->create(type, ino_out)) != OK)
             return r;
         std::string buf;
@@ -161,7 +167,11 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
         std::cout<<"write to ec: "<<buf<<std::endl;
 #endif
         if ((r = ec->put(parent, buf)) != OK)
+        {
+            UNLOCK(parent);
             return r;
+        }
+        UNLOCK(parent);
     }
 
 #ifdef DEBUG
@@ -175,6 +185,7 @@ int
 yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
     int r = OK;
+    LOCK(parent);
 
 #ifdef DEBUG
     std::cout<<"lookup for "<<name<<std::endl;
@@ -193,20 +204,21 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
         found = false;
     else
     {
-    found = true;
-    size_t s = buf.find('/', pos);
-    size_t t = buf.find('/', s + 1);
+        found = true;
+        size_t s = buf.find('/', pos);
+        size_t t = buf.find('/', s + 1);
 #ifdef DEBUG
-    std::cout<<"s = "<<s<<", t = "<<t
-             <<", substr = "<<buf.substr(s, t - s)<<std::endl;
+        std::cout<<"s = "<<s<<", t = "<<t
+                 <<", substr = "<<buf.substr(s, t - s)<<std::endl;
 #endif
-    ino_out = strtol(buf.substr(s + 1, t - s).c_str(), NULL, 10);
-}
+        ino_out = strtol(buf.substr(s + 1, t - s).c_str(), NULL, 10);
+    }
 
 #ifdef DEBUG
     std::cout<<"lookup: "<<r<<std::endl;
 #endif
 
+    UNLOCK(parent);
     return r;
 }
 
@@ -214,6 +226,7 @@ int
 yfs_client::readdir(inum dir, std::list<dirent> &list)
 {
     int r = OK;
+    LOCK(dir);
 
 #ifdef DEBUG
     std::cout<<"readdir\n";
@@ -227,11 +240,17 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         dirent e;
         size_t t;
         if ((t = buf.find('/', s)) == std::string::npos)
+        {
+            UNLOCK(dir);
             return IOERR;
+        }
         e.name = buf.substr(s, t - s);
         s = t + 1;
         if ((t = buf.find('/', s)) == std::string::npos)
+        {
+            UNLOCK(dir);
             return IOERR;
+        }
 #ifdef DEBUG
         std::cout<<"read dir: "<<e.name
                  <<" "<<buf.substr(s, t - s)<<std::endl;
@@ -241,6 +260,7 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         list.push_back(e);
     }
 
+    UNLOCK(dir);
     return r;
 }
 
@@ -248,6 +268,7 @@ int
 yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 {
     int r = OK;
+    LOCK(ino);
 
     std::string buf;
     ec->get(ino, buf);
@@ -256,6 +277,7 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     std::cout<<"yfs reads size "<<buf.size()<<" "<<data<<std::endl;
 #endif
 
+    UNLOCK(ino);
     return r;
 }
 
@@ -264,6 +286,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         size_t &bytes_written)
 {
     int r = OK;
+    LOCK(ino);
 
 #ifdef DEBUG
     std::cout<<"yfs write off="<<off<<", size="<<size<<std::endl;
@@ -291,12 +314,14 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     ec->put(ino, buf);
     bytes_written = size;
 
+    UNLOCK(ino);
     return r;
 }
 
 int yfs_client::unlink(inum parent,const char *name)
 {
     int r = OK;
+    LOCK(parent);
 
     std::string buf;
     size_t s;
@@ -308,7 +333,10 @@ int yfs_client::unlink(inum parent,const char *name)
     std::cout<<"find "<<na<<" in "<<buf<<std::endl;
 #endif
     if ((s = buf.find(na)) == std::string::npos)
+    {
+        UNLOCK(parent);
         return NOENT;
+    }
 #ifdef DEBUG
     std::cout<<"find at "<<s<<std::endl;
 #endif
@@ -321,6 +349,7 @@ int yfs_client::unlink(inum parent,const char *name)
     std::cout<<"unlink parent = "<<parent<<", name = "<<name<<std::endl;
 #endif
     ec->put(parent, buf);
+    UNLOCK(parent);
 
     return r;
 }
