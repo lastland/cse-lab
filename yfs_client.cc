@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#define DEBUG
+
 #define LOCK(x) { lc->acquire(x); }
 #define UNLOCK(x) { lc->release(x); }
 
@@ -68,6 +70,7 @@ int
 yfs_client::getfile(inum inum, fileinfo &fin)
 {
     int r = OK;
+    LOCK(inum);
 
     printf("getfile %016llx\n", inum);
     extent_protocol::attr a;
@@ -83,6 +86,7 @@ yfs_client::getfile(inum inum, fileinfo &fin)
     printf("getfile %016llx -> sz %llu\n", inum, fin.size);
 
 release:
+    UNLOCK(inum);
     return r;
 }
 
@@ -90,6 +94,7 @@ int
 yfs_client::getdir(inum inum, dirinfo &din)
 {
     int r = OK;
+    LOCK(inum);
 
     printf("getdir %016llx\n", inum);
     extent_protocol::attr a;
@@ -102,6 +107,7 @@ yfs_client::getdir(inum inum, dirinfo &din)
     din.ctime = a.ctime;
 
 release:
+    UNLOCK(inum);
     return r;
 }
 
@@ -119,6 +125,7 @@ int
 yfs_client::setattr(inum ino, size_t size)
 {
     int r = OK;
+    LOCK(ino);
 
     std::string buf;
     ec->get(ino, buf);\
@@ -133,6 +140,7 @@ yfs_client::setattr(inum ino, size_t size)
     ec->put(ino, buf);
     std::cout<<"setattr size = "<<buf.size()<<", buf = "<<buf<<std::endl;
 
+    UNLOCK(ino);
     return r;
 }
 
@@ -192,7 +200,10 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 #endif
     std::string buf;
     if ((r = ec->get(parent, buf)) != OK)
+    {
+        UNLOCK(parent);
         return r;
+    }
     std::string na;
     na.assign(name);
     na += "/";
@@ -307,7 +318,7 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         buf += dat;
     }
     else
-        buf.replace(off, size, data, 0, size);
+        buf.replace(off, size, dat, 0, size);
 #ifdef DEBUG
     std::cout<<"yfs writes size "<<buf.size()<<" "<<buf<<std::endl;
 #endif
@@ -343,7 +354,12 @@ int yfs_client::unlink(inum parent,const char *name)
     size_t t = buf.find('/', s) + 1;
     size_t k = buf.find('/', t);
     inum ino = strtol(buf.substr(t, k - t).c_str(), NULL, 10);
+#ifdef DEBUG
+    std::cout<<"now remove ino = "<<ino<<std::endl;
+#endif
+    LOCK(ino);
     r = ec->remove(ino);
+    UNLOCK(ino);
     buf = buf.substr(0, s) + buf.substr(k + 1);
 #ifdef DEBUG
     std::cout<<"unlink parent = "<<parent<<", name = "<<name<<std::endl;

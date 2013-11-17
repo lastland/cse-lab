@@ -328,12 +328,16 @@ inode_manager::remove_file(uint32_t inum)
     uint32_t _size = MIN(ino->size / BLOCK_SIZE, NDIRECT);
     for (uint32_t i = 0; i < _size; i++)
         bm->free_block(ino->blocks[i]);
-    int idnum = ino->blocks[NDIRECT];
-    if (idnum != 0) {
-        inode_t* ido = get_inode(idnum);
-        for (uint32_t i = 0; i < ido->size; i++)
-            bm->free_block(ido->blocks[i]);
-        free_inode(idnum);
+    if (_size < ino->size)
+    {
+        int* indirect_block = (int*)malloc(BLOCK_SIZE);
+        bm->read_block(ino->blocks[NDIRECT], (char*)indirect_block);
+        uint32_t size = ino->size;
+        for (uint32_t i = NDIRECT * BLOCK_SIZE, j = 0;
+             i < size; i += BLOCK_SIZE, j++)
+            bm->free_block(indirect_block[j]);
+        free(indirect_block);
+        bm->free_block(ino->blocks[NDIRECT]);
     }
     free_inode(inum);
 
