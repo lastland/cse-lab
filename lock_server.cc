@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include "lang/verify.h"
 
 #define DEBUG
 
@@ -13,8 +14,14 @@ using namespace std;
 lock_server::lock_server():
     nacquire (0), locks ()
 {
-    pthread_mutex_init(&mutex, NULL);
-    pthread_cond_init(&cond, 0);
+    VERIFY(pthread_mutex_init(&mutex, NULL) == 0);
+    VERIFY(pthread_cond_init(&cond, 0) == 0);
+}
+
+lock_server::~lock_server()
+{
+    VERIFY(pthread_mutex_destroy(&mutex) == 0);
+    VERIFY(pthread_cond_destroy(&cond) == 0);
 }
 
 lock_protocol::status
@@ -47,7 +54,7 @@ lock_server::acquire(int clt, lock_protocol::lockid_t lid, int &r)
         }
         else
         {
-            pthread_cond_wait(&cond, &mutex);
+            VERIFY(pthread_cond_wait(&cond, &mutex) == 0);
         }
     }
     return lock_protocol::OK;
@@ -72,7 +79,7 @@ lock_server::release(int clt, lock_protocol::lockid_t lid, int &r)
         locks[lid] = false;
         locks_owner[lid] = 0;
         r = 0;
-        pthread_cond_broadcast(&cond);
+        VERIFY(pthread_cond_broadcast(&cond) == 0);
     }
     return lock_protocol::OK;
 }
