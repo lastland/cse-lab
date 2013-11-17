@@ -15,6 +15,7 @@ extent_client::extent_client(std::string dst)
   if (cl->bind() != 0) {
     printf("extent_client: bind failed\n");
   }
+
 }
 
 // a demo to show how to use RPC
@@ -31,7 +32,7 @@ extent_protocol::status
 extent_client::create(uint32_t type, extent_protocol::extentid_t &id)
 {
   extent_protocol::status ret = extent_protocol::OK;
-  ret = cl->call(extent_protocol::create, id);
+  ret = cl->call(extent_protocol::create, type, id);
   return ret;
 }
 
