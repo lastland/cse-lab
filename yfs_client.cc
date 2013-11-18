@@ -149,6 +149,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
                    extent_protocol::types type)
 {
     int r = OK;
+    LOCK(parent);
 
 #ifdef DEBUG
     std::cout<<"yfs"<<__FUNCTION__<<std::endl;
@@ -159,7 +160,6 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
     if (found) r = EXIST;
     else
     {
-        LOCK(parent);
         if ((r = ec->create(type, ino_out)) != OK)
             return r;
         std::string buf;
@@ -179,12 +179,12 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
             UNLOCK(parent);
             return r;
         }
-        UNLOCK(parent);
     }
 
 #ifdef DEBUG
     std::cout<<"create: "<<r<<std::endl;
 #endif
+    UNLOCK(parent);
 
     return r;
 }
@@ -193,7 +193,6 @@ int
 yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
     int r = OK;
-    LOCK(parent);
 
 #ifdef DEBUG
     std::cout<<"lookup for "<<name<<std::endl;
@@ -229,7 +228,6 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
     std::cout<<"lookup: "<<r<<std::endl;
 #endif
 
-    UNLOCK(parent);
     return r;
 }
 
