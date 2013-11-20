@@ -155,7 +155,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
     std::cout<<"yfs"<<__FUNCTION__<<std::endl;
 #endif
     bool found = false;
-    if ((r = lookup(parent, name, found, ino_out)) != OK)
+    if ((r = _lookup(parent, name, found, ino_out)) != OK)
         return r;
     if (found) r = EXIST;
     else
@@ -191,6 +191,15 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
 
 int
 yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
+{
+    LOCK(parent);
+    int r = _lookup(parent, name, found, ino_out);
+    UNLOCK(parent);
+    return r;
+}
+
+int
+yfs_client::_lookup(inum parent, const char *name, bool &found, inum &ino_out)
 {
     int r = OK;
 
