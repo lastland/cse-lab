@@ -156,15 +156,24 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
 #endif
     bool found = false;
     if ((r = _lookup(parent, name, found, ino_out)) != OK)
+    {
+        UNLOCK(parent);
         return r;
+    }
     if (found) r = EXIST;
     else
     {
         if ((r = ec->create(type, ino_out)) != OK)
+        {
+            UNLOCK(parent);
             return r;
+        }
         std::string buf;
         if ((r = ec->get(parent, buf)) != OK)
+        {
+            UNLOCK(parent);
             return r;
+        }
 #ifdef DEBUG
         std::cout<<"get ec: "<<buf<<std::endl;
 #endif
