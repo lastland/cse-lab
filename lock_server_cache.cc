@@ -9,7 +9,7 @@
 #include "handle.h"
 #include "tprintf.h"
 
-#define DEBUG
+//#define DEBUG
 
 typedef _lock lock;
 
@@ -113,6 +113,9 @@ void lock_server_cache::retry()
                 {
                     l->state = LOCKED;
                     l->owner = rid;
+#ifdef DEBUG
+                    tprintf("give lock to %s\n", rid.c_str());
+#endif
                     if (!l->retry_list.empty())
                     {
                         revoke_lock_list.push_back(lid);
@@ -164,15 +167,12 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
 #ifdef DEBUG
     tprintf("%s acquires lock %d\n", cid, lid);
 #endif
-
+    ScopedLock ml1(&mutex);
+    if (locks.find(lid) == locks.end())
     {
-        ScopedLock ml(&mutex);
-        if (locks.find(lid) == locks.end())
-        {
-            locks[lid] = lock();
-        }
-        l = &locks[lid];
+        locks[lid] = lock();
     }
+    l = &locks[lid];
 
 #ifdef DEBUG
     tprintf("current lock state is %d\n", l->state);
@@ -184,7 +184,9 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
     case FREE:
         l->state = LOCKED;
         l->owner = id;
+#ifdef DEBUG
         tprintf("gives %s lock %d\n", cid, lid);
+#endif
         break;
     case LOCKED:
         l->state = REVOKING;
@@ -213,12 +215,17 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
 #endif
     lock_protocol::status ret = lock_protocol::OK;
     lock* l;
+    ScopedLock ml(&mutex);
+    l = &locks[lid];
+    if (l->owner != id)
     {
-        ScopedLock ml(&mutex);
-        l = &locks[lid];
-        if (l->owner != id)
-            return lock_protocol::NOENT;
+#ifdef DEBUG
+        tprintf("something wrong! it's not the owner! owner = %s, id = %s\n",
+                l->owner.c_str(), id.c_str());
+#endif
+        return lock_protocol::NOENT;
     }
+
 #ifdef DEBUG
     tprintf("put lock %d in retry_lock_list\n", lid);
 #endif

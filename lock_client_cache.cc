@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include "tprintf.h"
 
-#define DEBUG
+//#define DEBUG
 
 int lock_client_cache::last_port = 0;
 
@@ -60,7 +60,7 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
 #ifdef DEBUG
     char cid[100];
     strcpy(cid, id.c_str());
-    tprintf("-* acquire on %s\n", cid);
+    tprintf("-* acquire on %s, %d\n", cid, pthread_self());
 #endif
     int ret = lock_protocol::OK, r;
     lock_cache* c;
@@ -120,7 +120,7 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
 #ifdef DEBUG
     char cid[100];
     strcpy(cid, id.c_str());
-    tprintf("-*release on %s\n", id.c_str());
+    tprintf("-*release on %s %d\n", id.c_str(), pthread_self());
 #endif
     lock_cache* c;
 #ifdef DEBUG
@@ -157,7 +157,6 @@ void lock_client_cache::revoker()
         while (!revoke_list.empty())
         {
             lock_protocol::lockid_t lid = revoke_list.front();
-            revoke_list.remove(lid);
 #ifdef DEBUG
             tprintf("%s is going to revoke %d\n", id.c_str(), lid);
 #endif
@@ -180,6 +179,7 @@ void lock_client_cache::revoker()
             tprintf("%s revoked %d\n", id.c_str(), lid);
 #endif
             c->state = NONE;
+            revoke_list.remove(lid);
             pthread_mutex_unlock(&c->mutex);
         }
         pthread_mutex_unlock(&revoke_mutex);
