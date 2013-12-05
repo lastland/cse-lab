@@ -36,6 +36,7 @@ typedef struct lock_cache
     pthread_mutex_t mutex;
     pthread_cond_t ac_cond;
     pthread_cond_t rl_cond;
+    pthread_cond_t rv_cond;
 
     lock_cache()
     {
@@ -43,6 +44,7 @@ typedef struct lock_cache
         VERIFY(pthread_mutex_init(&mutex, NULL) == 0);
         VERIFY(pthread_cond_init(&ac_cond, 0) == 0);
         VERIFY(pthread_cond_init(&rl_cond, 0) == 0);
+        VERIFY(pthread_cond_init(&rv_cond, 0) == 0);
     }
 
     ~lock_cache()
@@ -50,6 +52,7 @@ typedef struct lock_cache
         VERIFY(pthread_mutex_destroy(&mutex) == 0);
         VERIFY(pthread_cond_destroy(&ac_cond) == 0);
         VERIFY(pthread_cond_destroy(&rl_cond) == 0);
+        VERIFY(pthread_cond_destroy(&rv_cond) == 0);
     }
 } lock_cache;
 
@@ -60,8 +63,7 @@ class lock_client_cache : public lock_client {
     std::string hostname;
     std::string id;
     std::map<lock_protocol::lockid_t, lock_cache> locks;
-    pthread_mutex_t ac_mutex;
-    pthread_mutex_t rl_mutex;
+    pthread_mutex_t mutex;
     pthread_mutex_t revoke_mutex;
     pthread_mutex_t retry_mutex;
     pthread_cond_t revoke_cond;

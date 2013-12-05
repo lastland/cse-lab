@@ -18,6 +18,8 @@
 #include "lang/verify.h"
 #include "yfs_client.h"
 
+#define DEBUG
+
 int myid;
 yfs_client *yfs;
 
@@ -90,7 +92,7 @@ getattr(yfs_client::inum inum, struct stat &st)
 //
 void
 fuseserver_getattr(fuse_req_t req, fuse_ino_t ino,
-        struct fuse_file_info *fi)
+                   struct fuse_file_info *fi)
 {
     struct stat st;
     yfs_client::inum inum = ino; // req->in.h.nodeid;
@@ -153,7 +155,7 @@ fuseserver_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
 //
 void
 fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
-        off_t off, struct fuse_file_info *fi)
+                off_t off, struct fuse_file_info *fi)
 {
 #ifdef DEBUG
     std::cout<<"ino = "<<ino<<", off = "<<off<<", size = "<<size<<std::endl;
@@ -184,8 +186,8 @@ fuseserver_read(fuse_req_t req, fuse_ino_t ino, size_t size,
 //
 void
 fuseserver_write(fuse_req_t req, fuse_ino_t ino,
-        const char *buf, size_t size, off_t off,
-        struct fuse_file_info *fi)
+                 const char *buf, size_t size, off_t off,
+                 struct fuse_file_info *fi)
 {
 #ifdef DEBUG
     std::cout<<"write given size = "<<size<<std::endl
@@ -223,7 +225,7 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
 //
 yfs_client::status
 fuseserver_createhelper(fuse_ino_t parent, const char *name,
-        mode_t mode, struct fuse_entry_param *e)
+                        mode_t mode, struct fuse_entry_param *e)
 {
     // In yfs, timeouts are always set to 0.0, and generations are always set to 0
     e->attr_timeout = 0.0;
@@ -237,15 +239,18 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
     yfs_client::inum ino = e->ino;
     yfs_client::status r = yfs->create(p, name, mode, ino,
                                        extent_protocol::T_FILE);
-    if (r == yfs_client::OK) e->ino = ino;
-    getattr(ino, e->attr);
+    if (r == yfs_client::OK)
+    {
+        e->ino = ino;
+        getattr(ino, e->attr);
+    }
 
     return r;
 }
 
 void
 fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
-        mode_t mode, struct fuse_file_info *fi)
+                  mode_t mode, struct fuse_file_info *fi)
 {
     struct fuse_entry_param e;
     yfs_client::status ret;
@@ -262,7 +267,7 @@ fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
 }
 
 void fuseserver_mknod( fuse_req_t req, fuse_ino_t parent,
-        const char *name, mode_t mode, dev_t rdev ) {
+                       const char *name, mode_t mode, dev_t rdev ) {
     struct fuse_entry_param e;
     yfs_client::status ret;
     if( (ret = fuseserver_createhelper( parent, name, mode, &e )) == yfs_client::OK ) {
@@ -303,12 +308,17 @@ fuseserver_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     std::cout<<"lookup end. found = "<<found<<", ino = "<<ino<<std::endl;
 #endif
     e.ino = ino;
-    getattr(ino, e.attr);
+
 
     if (found)
+    {
+        getattr(ino, e.attr);
         fuse_reply_entry(req, &e);
+    }
     else
+    {
         fuse_reply_err(req, ENOENT);
+    }
 }
 
 
@@ -331,7 +341,7 @@ void dirbuf_add(struct dirbuf *b, const char *name, fuse_ino_t ino)
 #define min(x, y) ((x) < (y) ? (x) : (y))
 
 int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize,
-        off_t off, size_t maxsize)
+                      off_t off, size_t maxsize)
 {
     if ((size_t)off < bufsize)
         return fuse_reply_buf(req, buf + off, min(bufsize - off, maxsize));
@@ -383,7 +393,7 @@ fuseserver_readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
 
 void
 fuseserver_open(fuse_req_t req, fuse_ino_t ino,
-        struct fuse_file_info *fi)
+                struct fuse_file_info *fi)
 {
     fuse_reply_open(req, fi);
 }
@@ -400,7 +410,7 @@ fuseserver_open(fuse_req_t req, fuse_ino_t ino,
 //
 void
 fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
-        mode_t mode)
+                 mode_t mode)
 {
     struct fuse_entry_param e;
     // In yfs, timeouts are always set to 0.0, and generations are always set to 0
@@ -519,7 +529,7 @@ main(int argc, char *argv[])
     fuse_args args = FUSE_ARGS_INIT( fuse_argc, (char **) fuse_argv );
     int foreground;
     int res = fuse_parse_cmdline( &args, &mountpoint, 0 /*multithreaded*/,
-            &foreground );
+                                  &foreground );
     if( res == -1 ) {
         fprintf(stderr, "fuse_parse_cmdline failed\n");
         return 0;
@@ -536,7 +546,7 @@ main(int argc, char *argv[])
     struct fuse_session *se;
 
     se = fuse_lowlevel_new(&args, &fuseserver_oper, sizeof(fuseserver_oper),
-            NULL);
+                           NULL);
     if(se == 0){
         fprintf(stderr, "fuse_lowlevel_new failed\n");
         exit(1);

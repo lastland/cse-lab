@@ -1,5 +1,6 @@
 // yfs client.  implements FS operations using extent and lock server
 #include "yfs_client.h"
+#include "lock_client_cache.h"
 #include "extent_client.h"
 #include <sstream>
 #include <iostream>
@@ -17,7 +18,7 @@
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
-  lc = new lock_client(lock_dst);
+  lc = new lock_client_cache(lock_dst);
   if (ec->put(1, "") != extent_protocol::OK)
       printf("error init root dir\n"); // XYB: init root dir
 }
@@ -45,7 +46,7 @@ yfs_client::isfile(inum inum)
     LOCK(inum);
     extent_protocol::attr a;
     if (ec->getattr(inum, a) != extent_protocol::OK) {
-        printf("error getting attr\n");
+        printf("error getting attr %d\n", inum);
         UNLOCK(inum);
         return false;
     }
@@ -183,11 +184,14 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
 #ifdef DEBUG
         std::cout<<"write to ec: "<<buf<<std::endl;
 #endif
+        ec->put(parent, buf);
+        /*
         if ((r = ec->put(parent, buf)) != OK)
         {
             UNLOCK(parent);
             return r;
         }
+        */
     }
 
 #ifdef DEBUG
@@ -213,12 +217,14 @@ yfs_client::_lookup(inum parent, const char *name, bool &found, inum &ino_out)
     int r = OK;
 
 #ifdef DEBUG
-    std::cout<<"lookup for "<<name<<std::endl;
+    std::cout<<"lookup for "<<name<<"in "<<parent<<std::endl;
 #endif
     std::string buf;
     if ((r = ec->get(parent, buf)) != OK)
     {
-        UNLOCK(parent);
+#ifdef DEBUG
+        std::cout<<"get failed, ret = "<<r<<std::endl;
+#endif
         return r;
     }
     std::string na;

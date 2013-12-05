@@ -1,6 +1,8 @@
 #include <time.h>
 #include "inode_manager.h"
 
+#define DEBUG
+
 // disk layer -----------------------------------------
 
 disk::disk()
@@ -44,6 +46,7 @@ blockid_t
 block_manager::alloc_block()
 {
     int res = 0;
+    pthread_mutex_lock(&mutex);
     for (uint32_t i = 0; i < BPI; i++) {
         int mask = ~using_blocks[i];
         std::cout<<"i = "<<i<<"mask = "<<using_blocks[i]<<std::endl;
@@ -57,6 +60,7 @@ block_manager::alloc_block()
             break;
         }
     }
+    pthread_mutex_unlock(&mutex);
 
     return res + BLOCK_START_POS;
 }
@@ -65,6 +69,7 @@ void
 block_manager::free_block(uint32_t id)
 {
     std::cout<<"free id = "<<id<<std::endl;
+    pthread_mutex_lock(&mutex);
     id -= BLOCK_START_POS;
     int key = id / sizeof(int) / 8; // key in using_blocks
     int pos = id % (sizeof(int) * 8);
@@ -72,6 +77,7 @@ block_manager::free_block(uint32_t id)
     std::cout<<"pos = "<<mask<<std::endl;
 
     using_blocks[key] &= ~mask;
+    pthread_mutex_unlock(&mutex);
 
     return;
 }
@@ -86,6 +92,7 @@ block_manager::block_manager()
     sb.size = BLOCK_SIZE * BLOCK_NUM;
     sb.nblocks = BLOCK_NUM;
     sb.ninodes = INODE_NUM;
+    pthread_mutex_init(&mutex, NULL);
 }
 
 void
@@ -106,6 +113,7 @@ inode_manager::inode_manager()
 {
   bm = new block_manager();
   uint32_t root_dir = alloc_inode(extent_protocol::T_DIR);
+  pthread_mutex_init(&mutex, NULL);
   if (root_dir != 1) {
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
     exit(0);
@@ -117,13 +125,16 @@ inode_manager::inode_manager()
 uint32_t
 inode_manager::alloc_inode(uint32_t type)
 {
-    static uint32_t inum = 1;
+    pthread_mutex_lock(&mutex);
+    static uint32_t inum = 0;
+    inum++;
     inode_t* ino = (inode_t*)malloc(sizeof(inode_t));
     memset(ino, 0, sizeof(inode_t));
     ino->type = type;
     ino->size = 0;
     ino->atime = ino->mtime = ino->ctime = time(NULL);
     put_inode(inum, ino);
+    pthread_mutex_unlock(&mutex);
 
     return inum++;
 }

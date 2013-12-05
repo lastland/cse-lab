@@ -10,30 +10,39 @@
 #include "lock_server.h"
 
 typedef enum
+    {
+        FREE,
+        LOCKED,
+        RETRYING,
+        REVOKING
+    } lock_state;
+
+struct client
 {
-    FREE,
-    LOCKED,
-    REVOKING
-} lock_state;
+    std::string cid;
+    lock_protocol::lockid_t lid;
+
+    client(std::string _cid, lock_protocol::lockid_t _lid)
+    {
+        cid = _cid;
+        lid = _lid;
+    }
+};
 
 struct _lock
 {
     lock_state state;
     std::string owner;
-    pthread_mutex_t mutex;
-    std::list<std::string> retry_list;
+    std::list<std::string> waiters;
+    std::string retryer;
 
     _lock()
     {
         state = FREE;
         owner = "";
-        VERIFY(pthread_mutex_init(&mutex, NULL) == 0);
     }
 
-    ~_lock()
-    {
-        VERIFY(pthread_mutex_destroy(&mutex) == 0);
-    }
+    ~_lock() {}
 };
 
 class lock_server_cache
@@ -45,8 +54,8 @@ class lock_server_cache
     pthread_mutex_t retry_mutex;
     pthread_cond_t revoke_cond;
     pthread_cond_t retry_cond;
-    std::list<lock_protocol::lockid_t> revoke_lock_list;
-    std::list<lock_protocol::lockid_t> retry_lock_list;
+    std::list<client> revoke_list;
+    std::list<client> retry_list;
     std::map<lock_protocol::lockid_t, _lock> locks;
  public:
     lock_server_cache();

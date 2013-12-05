@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include "tprintf.h"
 
-//#define DEBUG
+#define DEBUG
 
 int lock_client_cache::last_port = 0;
 
@@ -44,8 +44,7 @@ lock_client_cache::lock_client_cache(std::string xdst,
     rlsrpc->reg(rlock_protocol::retry, this, &lock_client_cache::retry_handler);
 
     pthread_t revoke_thread, retry_thread;
-    VERIFY(pthread_mutex_init(&ac_mutex, NULL) == 0);
-    VERIFY(pthread_mutex_init(&rl_mutex, NULL) == 0);
+    VERIFY(pthread_mutex_init(&mutex, NULL) == 0);
     VERIFY(pthread_mutex_init(&revoke_mutex, NULL) == 0);
     VERIFY(pthread_mutex_init(&retry_mutex, NULL) == 0);
     VERIFY(pthread_cond_init(&revoke_cond, 0) == 0);
@@ -69,12 +68,13 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     tprintf("%s acquires lock %d\n", cid, lid);
 #endif
 
-    pthread_mutex_lock(&ac_mutex);
+    pthread_mutex_lock(&mutex);
     if (locks.find(lid) == locks.end())
     {
         locks[lid] = lock_cache();
     }
     c = &locks[lid];
+    pthread_mutex_unlock(&mutex);
 
     pthread_mutex_lock(&c->mutex);
  retry:
@@ -98,18 +98,22 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
         break;
     default:
 #ifdef DEBUG
-        tprintf("%s waits to retry on lock %d\n", cid, lid);
+        tprintf("****** %s waits to retry on lock %d\n", cid, lid);
 #endif
         VERIFY(pthread_cond_wait(&c->ac_cond, &c->mutex) == 0);
-        c->state = LOCKED;
-        c->owner = pthread_self();
+        if (c->state == FREE)
+        {
+            c->state = LOCKED;
+            c->owner = pthread_self();
 #ifdef DEBUG
-        tprintf("%s is granted with lock %d\n", cid, lid);
+            tprintf("%s is granted with lock %d\n", cid, lid);
 #endif
+        }
+        else
+            goto retry;
         break;
     }
     pthread_mutex_unlock(&c->mutex);
-    pthread_mutex_unlock(&ac_mutex);
 
     return lock_protocol::OK;
 }
@@ -126,27 +130,35 @@ lock_client_cache::release(lock_protocol::lockid_t lid)
 #ifdef DEBUG
     tprintf("%s asks to release lock %d\n", cid, lid);
 #endif
-    pthread_mutex_lock(&rl_mutex);
+    pthread_mutex_lock(&mutex);
     VERIFY(locks.find(lid) != locks.end());
     c = &locks[lid];
+    pthread_mutex_unlock(&mutex);
 
     pthread_mutex_lock(&c->mutex);
-    VERIFY(c->state == LOCKED);
-    c->state = FREE;
 #ifdef DEBUG
-    tprintf("%s released lock %d\n", cid, lid);
+    tprintf("state of lock is %d\n", c->state);
 #endif
-    VERIFY(pthread_cond_signal(&c->ac_cond) == 0);
-    VERIFY(pthread_cond_signal(&c->rl_cond) == 0);
+    if (c->state == LOCKED)
+    {
+        c->state = FREE;
+#ifdef DEBUG
+        tprintf("%s released lock %d\n", cid, lid);
+#endif
+        pthread_cond_signal(&c->ac_cond);
+    }
+    else if (c->state == RELEASING)
+    {
+        pthread_cond_signal(&c->rl_cond);
+    }
     pthread_mutex_unlock(&c->mutex);
-    pthread_mutex_unlock(&rl_mutex);
 
     return lock_protocol::OK;
 }
 
 void lock_client_cache::revoker()
 {
-    int r;
+    int r, ret;
     while (true)
     {
 #ifdef DEBUG
@@ -157,6 +169,7 @@ void lock_client_cache::revoker()
         while (!revoke_list.empty())
         {
             lock_protocol::lockid_t lid = revoke_list.front();
+            revoke_list.pop_front();
 #ifdef DEBUG
             tprintf("%s is going to revoke %d\n", id.c_str(), lid);
 #endif
@@ -164,22 +177,25 @@ void lock_client_cache::revoker()
             lock_cache* c = &locks[lid];
             pthread_mutex_lock(&c->mutex);
 #ifdef DEBUG
-            tprintf("revoker: current state of lock on %s is %d\n", id.c_str(), c->state);
+            tprintf("revoker: current state of lock on %s is %d\n",
+                    id.c_str(), c->state);
 #endif
-            while (c->state != FREE)
+            if (c->state == LOCKED || c->state == ACQUIRING)
             {
 #ifdef DEBUG
+                tprintf("revoker: current state of lock on %s is %d\n",
+                        id.c_str(), c->state);
                 tprintf("revoker: lock is in use, wait for releasing\n");
 #endif
+                c->state = RELEASING;
                 VERIFY(pthread_cond_wait(&c->rl_cond, &c->mutex) == 0);
             }
-            c->state = RELEASING;
-            cl->call(lock_protocol::release, lid, id, r);
+            c->state = NONE;
+            ret = cl->call(lock_protocol::release, lid, id, r);
 #ifdef DEBUG
             tprintf("%s revoked %d\n", id.c_str(), lid);
 #endif
-            c->state = NONE;
-            revoke_list.remove(lid);
+            pthread_cond_signal(&c->ac_cond);
             pthread_mutex_unlock(&c->mutex);
         }
         pthread_mutex_unlock(&revoke_mutex);
@@ -206,6 +222,7 @@ void lock_client_cache::retryer()
 #ifdef DEBUG
     tprintf("retryer start.\n");
 #endif
+    int r, ret;
     while (true)
     {
 #ifdef DEBUG
@@ -216,14 +233,21 @@ void lock_client_cache::retryer()
         while (!retry_list.empty())
         {
             lock_protocol::lockid_t lid = retry_list.front();
-            pthread_mutex_lock(&locks[lid].mutex);
+            lock_cache* c = &locks[lid];
+            pthread_mutex_lock(&c->mutex);
 #ifdef DEBUG
             tprintf("%s is going to retry on lock %d\n", id.c_str(), lid);
 #endif
             retry_list.pop_front();
             VERIFY(locks.find(lid) != locks.end());
-            pthread_cond_signal(&locks[lid].ac_cond);
-            pthread_mutex_unlock(&locks[lid].mutex);
+            ret = cl->call(lock_protocol::acquire, lid, id, r);
+            if (ret == lock_protocol::OK)
+            {
+                if (c->state != RELEASING)
+                    c->state = FREE;
+                pthread_cond_signal(&c->ac_cond);
+            }
+            pthread_mutex_unlock(&c->mutex);
         }
         pthread_mutex_unlock(&retry_mutex);
     }

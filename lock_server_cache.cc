@@ -9,15 +9,9 @@
 #include "handle.h"
 #include "tprintf.h"
 
-//#define DEBUG
+#define DEBUG
 
 typedef _lock lock;
-
-template<typename A, typename B>
-std::pair<B, A> flip_pair(const std::pair<A, B> &p)
-{
-    return std::pair<B, A>(p.second, p.first);
-}
 
 void lock_server_cache::revoke()
 {
@@ -25,105 +19,59 @@ void lock_server_cache::revoke()
     rlock_protocol::status r_ret;
     while (true)
     {
-        ScopedLock ml(&revoke_mutex);
+        pthread_mutex_lock(&revoke_mutex);
         pthread_cond_wait(&revoke_cond, &revoke_mutex);
 #ifdef DEBUG
         tprintf("start to revoke!\n");
 #endif
-        while (!revoke_lock_list.empty())
+        while (!revoke_list.empty())
         {
-            lock_protocol::lockid_t lid = revoke_lock_list.front();
-            revoke_lock_list.remove(lid);
-            lock* l = &locks[lid];
+            client req = revoke_list.front();
+            revoke_list.pop_front();
 #ifdef DEBUG
-            tprintf("revoke %s of %d\n", l->owner.c_str(), lid);
+            tprintf("revoke %s of %d\n", req.cid.c_str(), req.lid);
 #endif
-            handle h(l->owner);
+            handle h(req.cid);
             if (h.safebind())
+            {
+                pthread_mutex_unlock(&revoke_mutex);
                 r_ret = h.safebind()->call(rlock_protocol::revoke,
-                                           lid, r);
+                                           req.lid, r);
+                pthread_mutex_lock(&revoke_mutex);
+            }
             if (!h.safebind() || r_ret != rlock_protocol::OK)
                 tprintf("revoke rpc failed!\n");
         }
+        pthread_mutex_unlock(&revoke_mutex);
     }
 }
 
 void lock_server_cache::retry()
 {
     int r;
-    rlock_protocol::status r_ret;
+    rlock_protocol::status ret;
     while (true)
     {
-        ScopedLock ml(&retry_mutex);
+        pthread_mutex_lock(&retry_mutex);
         pthread_cond_wait(&retry_cond, &retry_mutex);
-#ifdef DEBUG
-        tprintf("start to retry!\n");
-#endif
-        while (!retry_lock_list.empty())
+        while (!retry_list.empty())
         {
-#ifdef DEBUG
-            tprintf("retry_lock_list size = %d\n", retry_lock_list.size());
-#endif
-            lock_protocol::lockid_t lid = retry_lock_list.front();
-            retry_lock_list.pop_front();
-            lock* l = &locks[lid];
-            ScopedLock ml(&l->mutex);
-#ifdef DEBUG
-            tprintf("retry_list size = %d, lid = %d\n", l->retry_list.size(), lid);
-#endif
-            if (l->retry_list.empty())
+            client req = retry_list.front();
+            retry_list.pop_front();
+            handle h(req.cid);
+            if (h.safebind())
             {
-                l->state = FREE;
-            }
-            else
-            {
-                std::map<std::string, int> count;
-                for (std::list<std::string>::iterator it = l->retry_list.begin();
-                     it != l->retry_list.end(); it++)
-                {
-                    if (count.find(*it) == count.end())
-                        count[*it] = 1;
-                    else count[*it] += 1;
-                }
-                int maxcount = 0;
-                std::string rid = "";
-                for (std::map<std::string, int>::iterator it = count.begin();
-                     it != count.end(); it++)
-                {
-                    if (it->second > maxcount)
-                    {
-                        rid = it->first;
-                        maxcount = it->second;
-                    }
-                }
-                l->retry_list.remove(rid);
 #ifdef DEBUG
-                tprintf("allow %s to retry\n", rid.c_str());
+                tprintf("allow %s to retry on %d\n", req.cid.c_str(), req.lid);
 #endif
-
-                handle h(rid);
-                if (h.safebind())
-                    r_ret = h.safebind()->call(rlock_protocol::retry,
-                                               lid, r);
-                if (!h.safebind() || r_ret != rlock_protocol::OK)
-                {
-                    tprintf("retry rpc failed!\n");
-                }
-                else
-                {
-                    l->state = LOCKED;
-                    l->owner = rid;
-#ifdef DEBUG
-                    tprintf("give lock to %s\n", rid.c_str());
-#endif
-                    if (!l->retry_list.empty())
-                    {
-                        revoke_lock_list.push_back(lid);
-                        pthread_cond_signal(&revoke_cond);
-                    }
-                }
+                pthread_mutex_unlock(&retry_mutex);
+                ret = h.safebind()->call(rlock_protocol::retry, req.lid, r);
+                pthread_mutex_lock(&retry_mutex);
             }
+            if (!h.safebind() || ret != rlock_protocol::OK)
+                tprintf("retry RPC failed!\n");
         }
+        pthread_mutex_unlock(&retry_mutex);
     }
 }
 
@@ -167,41 +115,47 @@ int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id,
 #ifdef DEBUG
     tprintf("%s acquires lock %d\n", cid, lid);
 #endif
-    ScopedLock ml1(&mutex);
+    pthread_mutex_lock(&mutex);
     if (locks.find(lid) == locks.end())
-    {
         locks[lid] = lock();
-    }
     l = &locks[lid];
 
 #ifdef DEBUG
     tprintf("current lock state is %d\n", l->state);
+    tprintf("current retryer is %s\n", l->retryer.c_str());
 #endif
 
-    ScopedLock ml(&l->mutex);
-    switch (l->state)
+    if (l->state == FREE || (l->state == RETRYING &&
+                             l->retryer == id))
     {
-    case FREE:
+        if (l->state == RETRYING)
+            l->waiters.pop_front();
         l->state = LOCKED;
         l->owner = id;
-#ifdef DEBUG
-        tprintf("gives %s lock %d\n", cid, lid);
-#endif
-        break;
-    case LOCKED:
-        l->state = REVOKING;
-        revoke_lock_list.push_back(lid);
-        pthread_cond_signal(&revoke_cond);
-    default:
-        l->retry_list.push_back(id);
-#ifdef DEBUG
-        tprintf("retry_list size = %d\n", l->retry_list.size());
-#endif
-        ret = lock_protocol::RETRY;
-#ifdef DEBUG
-        tprintf("gives %s RETRY\n", cid);
-#endif
+        if (!l->waiters.empty())
+        {
+            l->state = REVOKING;
+            pthread_mutex_lock(&revoke_mutex);
+            revoke_list.push_back(client(id, lid));
+            pthread_cond_signal(&revoke_cond);
+            pthread_mutex_unlock(&revoke_mutex);
+        }
     }
+    else
+    {
+        l->waiters.push_back(id);
+        if (l->state == LOCKED)
+        {
+            l->state = REVOKING;
+            pthread_mutex_lock(&revoke_mutex);
+            revoke_list.push_back(client(l->owner, lid));
+            pthread_cond_signal(&revoke_cond);
+            pthread_mutex_unlock(&revoke_mutex);
+        }
+
+        ret = lock_protocol::RETRY;
+    }
+    pthread_mutex_unlock(&mutex);
 
     return ret;
 }
@@ -215,7 +169,7 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
 #endif
     lock_protocol::status ret = lock_protocol::OK;
     lock* l;
-    ScopedLock ml(&mutex);
+    pthread_mutex_lock(&mutex);
     l = &locks[lid];
     if (l->owner != id)
     {
@@ -226,11 +180,24 @@ lock_server_cache::release(lock_protocol::lockid_t lid, std::string id,
         return lock_protocol::NOENT;
     }
 
+    l->state = FREE;
 #ifdef DEBUG
-    tprintf("put lock %d in retry_lock_list\n", lid);
+    tprintf("%d freed.\n", lid);
 #endif
-    retry_lock_list.push_back(lid);
-    pthread_cond_signal(&retry_cond);
+    if (!l->waiters.empty())
+    {
+        l->state = RETRYING;
+        client req(l->waiters.front(), lid);
+        l->retryer = req.cid;
+        pthread_mutex_lock(&retry_mutex);
+#ifdef DEBUG
+        tprintf("put lock %d in retry_list\n", lid);
+#endif
+        retry_list.push_back(req);
+        pthread_cond_signal(&retry_cond);
+        pthread_mutex_unlock(&retry_mutex);
+    }
+    pthread_mutex_unlock(&mutex);
 
     return ret;
 }

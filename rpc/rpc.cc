@@ -662,6 +662,7 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
                                 unsigned int xid_rep, char **b, int *sz)
 {
     ScopedLock rwl(&reply_window_m_);
+    std::cout<<" + xid = "<<xid<<std::endl;
 
     rpcstate_t r = NEW;
 
@@ -709,7 +710,7 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
     else if (r == NEW)
         reply_t_->push_back(reply_t(xid));
 
-
+    std::cout<<" - xid = "<<xid<<", r = "<<r<<std::endl;
     return r;
 }
 
