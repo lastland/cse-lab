@@ -4,6 +4,7 @@
 #define inode_h
 
 #include <stdint.h>
+#include <pthread.h>
 #include "extent_protocol.h" // TODO: delete it
 
 #define DISK_SIZE  1024*1024*16
@@ -26,6 +27,8 @@ class disk {
 
 // block layer -----------------------------------------
 
+#define BLOCK_START_POS (BLOCK_NUM / BPB + INODE_NUM / IPB + 3)
+
 typedef struct superblock {
   uint32_t size;
   uint32_t nblocks;
@@ -36,6 +39,7 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  pthread_mutex_t mutex;
  public:
   block_manager();
   struct superblock sb;
@@ -62,6 +66,8 @@ class block_manager {
 // Block containing bit for block b
 #define BBLOCK(b) ((b)/BPB + 2)
 
+#define BPI (BLOCK_NUM / sizeof(int) / 8)
+
 #define NDIRECT 32
 #define NINDIRECT (BLOCK_SIZE / sizeof(uint))
 #define MAXFILE (NDIRECT + NINDIRECT)
@@ -79,6 +85,7 @@ class inode_manager {
  private:
   block_manager *bm;
   struct inode* get_inode(uint32_t inum);
+  pthread_mutex_t mutex;
   void put_inode(uint32_t inum, struct inode *ino);
 
  public:
@@ -92,4 +99,3 @@ class inode_manager {
 };
 
 #endif
-
