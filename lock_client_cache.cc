@@ -191,6 +191,7 @@ void lock_client_cache::revoker()
                 VERIFY(pthread_cond_wait(&c->rl_cond, &c->mutex) == 0);
             }
             c->state = NONE;
+            lu->dorelease(lid);
             ret = cl->call(lock_protocol::release, lid, id, r);
 #ifdef DEBUG
             tprintf("%s revoked %d\n", id.c_str(), lid);

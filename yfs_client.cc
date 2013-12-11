@@ -18,9 +18,11 @@
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
-  lc = new lock_client_cache(lock_dst);
+  lc = new lock_client_cache(lock_dst, new extent_flusher(ec));
+  LOCK(1);
   if (ec->put(1, "") != extent_protocol::OK)
       printf("error init root dir\n"); // XYB: init root dir
+  UNLOCK(1);
 }
 
 yfs_client::inum
@@ -184,14 +186,11 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out,
 #ifdef DEBUG
         std::cout<<"write to ec: "<<buf<<std::endl;
 #endif
-        ec->put(parent, buf);
-        /*
         if ((r = ec->put(parent, buf)) != OK)
         {
             UNLOCK(parent);
             return r;
         }
-        */
     }
 
 #ifdef DEBUG
