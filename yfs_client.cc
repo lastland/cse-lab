@@ -10,8 +10,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define DEBUG
-
 #define LOCK(x) { lc->acquire(x); }
 #define UNLOCK(x) { lc->release(x); }
 

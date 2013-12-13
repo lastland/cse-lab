@@ -7,8 +7,6 @@
 #include <unistd.h>
 #include <time.h>
 
-#define DEBUG
-
 void extent_flusher::dorelease(lock_protocol::lockid_t lid)
 {
     ec->flush(lid);
@@ -84,7 +82,6 @@ extent_protocol::status
 extent_client::put(extent_protocol::extentid_t eid, std::string buf)
 {
     extent_protocol::status ret = extent_protocol::OK;
-    int r;
     file_cache* f = &file_cache_pool[eid];
     f->content = buf;
     f->dirty = true;
@@ -100,7 +97,6 @@ extent_protocol::status
 extent_client::remove(extent_protocol::extentid_t eid)
 {
     extent_protocol::status ret = extent_protocol::OK;
-    int r;
     file_cache_pool[eid].removed = true;
     return ret;
 }

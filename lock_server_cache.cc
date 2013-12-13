@@ -9,8 +9,6 @@
 #include "handle.h"
 #include "tprintf.h"
 
-#define DEBUG
-
 typedef _lock lock;
 
 void lock_server_cache::revoke()

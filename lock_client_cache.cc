@@ -8,8 +8,6 @@
 #include <stdio.h>
 #include "tprintf.h"
 
-#define DEBUG
-
 int lock_client_cache::last_port = 0;
 
 static void* revokethread(void* x)
@@ -191,7 +189,8 @@ void lock_client_cache::revoker()
                 VERIFY(pthread_cond_wait(&c->rl_cond, &c->mutex) == 0);
             }
             c->state = NONE;
-            lu->dorelease(lid);
+            if (lu != NULL)
+                lu->dorelease(lid);
             ret = cl->call(lock_protocol::release, lid, id, r);
 #ifdef DEBUG
             tprintf("%s revoked %d\n", id.c_str(), lid);

@@ -7,8 +7,6 @@
 #include <arpa/inet.h>
 #include "lang/verify.h"
 
-#define DEBUG
-
 using namespace std;
 
 lock_server::lock_server():
